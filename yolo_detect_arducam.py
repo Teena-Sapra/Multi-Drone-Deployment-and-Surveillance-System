@@ -64,7 +64,6 @@ elif 'picamera' in img_source:
     picam_idx = int(img_source[8:])
 elif 'arducam' in img_source:
     source_type = 'arducam'
-    arducam_idx = int(img_source[7:])
 else:
     print(f'Input {img_source} is invalid. Please try again.')
     sys.exit(0)
@@ -100,12 +99,10 @@ elif source_type == 'folder':
         if file_ext in img_ext_list:
             imgs_list.append(file)
 elif source_type == 'video' or source_type == 'usb':
-
     if source_type == 'video': cap_arg = img_source
     elif source_type == 'usb': cap_arg = usb_idx
     cap = cv2.VideoCapture(cap_arg)
 
-    # Set camera or video resolution if specified by user
     if user_res:
         cap.set(3, resW)
         cap.set(4, resH)
@@ -117,13 +114,15 @@ elif source_type == 'picamera':
     cap.start()
 
 elif source_type == 'arducam':
-    # Use V4L2 backend for Arducam MIPI CSI camera
-    cap = cv2.VideoCapture(arducam_idx, cv2.CAP_V4L2)
+    from picamera2 import Picamera2
+    cap = Picamera2()
     if user_res:
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, resW)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, resH)
+        cap.configure(cap.create_preview_configuration(main={"format": 'RGB888', "size": (resW, resH)}))
+    else:
+        cap.configure(cap.create_preview_configuration(main={"format": 'RGB888'}))
+    cap.start()
 
-# Set bounding box colors (using the Tableu 10 color scheme)
+# Set bounding box colors
 bbox_colors = [(164,120,87), (68,148,228), (93,97,209), (178,182,133), (88,159,106), 
               (96,202,231), (159,124,168), (169,162,241), (98,118,150), (172,176,184)]
 
@@ -138,14 +137,13 @@ while True:
 
     t_start = time.perf_counter()
 
-    # Load frame from image source
     if source_type == 'image' or source_type == 'folder':
         if img_count >= len(imgs_list):
             print('All images have been processed. Exiting program.')
             sys.exit(0)
         img_filename = imgs_list[img_count]
         frame = cv2.imread(img_filename)
-        img_count = img_count + 1
+        img_count += 1
     
     elif source_type == 'video':
         ret, frame = cap.read()
@@ -159,16 +157,10 @@ while True:
             print('Unable to read frames from the USB camera. Exiting program.')
             break
 
-    elif source_type == 'picamera':
+    elif source_type == 'picamera' or source_type == 'arducam':
         frame = cap.capture_array()
-        if (frame is None):
-            print('Unable to read frames from the Picamera. Exiting program.')
-            break
-
-    elif source_type == 'arducam':
-        ret, frame = cap.read()
-        if (frame is None) or (not ret):
-            print('Unable to read frames from the Arducam. Exiting program.')
+        if frame is None:
+            print(f'Unable to read frames from the {source_type}. Exiting program.')
             break
 
     # Resize frame if needed
@@ -178,13 +170,9 @@ while True:
     # Run inference on frame
     results = model(frame, verbose=False)
 
-    # Extract results
     detections = results[0].boxes
-
-    # Initialize variable for basic object counting example
     object_count = 0
 
-    # Go through each detection
     for i in range(len(detections)):
         xyxy_tensor = detections[i].xyxy.cpu()
         xyxy = xyxy_tensor.numpy().squeeze()
@@ -204,11 +192,9 @@ while True:
             cv2.putText(frame, label, (xmin, label_ymin-7), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
             object_count += 1
 
-    # Draw FPS if video/camera
     if source_type in ['video', 'usb', 'picamera', 'arducam']:
         cv2.putText(frame, f'FPS: {avg_frame_rate:0.2f}', (10,20), cv2.FONT_HERSHEY_SIMPLEX, .7, (0,255,255), 2)
 
-    # Display detection results
     cv2.putText(frame, f'Number of objects: {object_count}', (10,40), cv2.FONT_HERSHEY_SIMPLEX, .7, (0,255,255), 2)
     cv2.imshow('YOLO detection results',frame)
     if record: recorder.write(frame)
@@ -230,17 +216,15 @@ while True:
 
     if len(frame_rate_buffer) >= fps_avg_len:
         frame_rate_buffer.pop(0)
-        frame_rate_buffer.append(frame_rate_calc)
-    else:
-        frame_rate_buffer.append(frame_rate_calc)
+    frame_rate_buffer.append(frame_rate_calc)
 
     avg_frame_rate = np.mean(frame_rate_buffer)
 
 # Clean up
 print(f'Average pipeline FPS: {avg_frame_rate:.2f}')
-if source_type in ['video','usb','arducam']:
+if source_type in ['video','usb']:
     cap.release()
-elif source_type == 'picamera':
+elif source_type in ['picamera','arducam']:
     cap.stop()
 if record: recorder.release()
 cv2.destroyAllWindows()
