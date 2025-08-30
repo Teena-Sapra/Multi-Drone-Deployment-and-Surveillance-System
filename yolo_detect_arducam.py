@@ -8,11 +8,12 @@ import numpy as np
 from ultralytics import YOLO
 import serial
 
-# ----------------- LiDAR Setup -----------------
-# Adjust port if needed: /dev/ttyUSB0 or /dev/serial0 depending on your setup
-ser = serial.Serial("/dev/serial0", 115200, timeout=1)
+ser = None  # Will initialize later, after camera is confirmed working
 
 def get_lidar_distance():
+    global ser
+    if ser is None:
+        return None, None, None
     data = ser.read(9)
     if len(data) == 9 and data[0] == 0x59 and data[1] == 0x59:
         distance = data[2] + (data[3] << 8)   # in cm
@@ -121,9 +122,16 @@ elif source_type == 'arducam':
         sys.exit(0)
     print(f"Using Arducam at /dev/video{arducam_idx}")
     cap = cv2.VideoCapture(arducam_idx, cv2.CAP_V4L2)
-    if user_res:
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, resW)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, resH)
+
+    # Try to grab first frame to confirm camera works
+    ret, frame = cap.read()
+    if not ret or frame is None:
+        print("Camera failed at init")
+        sys.exit(0)
+    print("Camera OK, now opening LiDAR...")
+
+    # Initialize LiDAR only after camera works
+    ser = serial.Serial("/dev/serial0", 115200, timeout=1)
 
 bbox_colors = [(164,120,87), (68,148,228), (93,97,209), (178,182,133), (88,159,106), (96,202,231), (159,124,168), (169,162,241), (98,118,150), (172,176,184)]
 
