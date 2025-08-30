@@ -24,7 +24,7 @@ def get_lidar_distance():
 # ----------------- Argument Parser -----------------
 parser = argparse.ArgumentParser()
 parser.add_argument('--model', help='Path to YOLO model file (example: "runs/detect/train/weights/best.pt")', required=True)
-parser.add_argument('--source', help='Image source, can be image file ("test.jpg"), image folder ("test_dir"), video file ("testvid.mp4"), index of USB camera ("usb0"), index of Picamera ("picamera0"), or Arducam ("arducam0")', required=True)
+parser.add_argument('--source', help='Image source, can be image file ("test.jpg"), image folder ("test_dir"), video file ("testvid.mp4"), index of USB camera ("usb0"), index of Picamera ("picamera0"), or Arducam ("arducam")', required=True)
 parser.add_argument('--thresh', help='Minimum confidence threshold for displaying detected objects (example: "0.4")', default=0.5)
 parser.add_argument('--resolution', help='Resolution in WxH to display inference results at (example: "640x480"), otherwise, match source resolution', default=None)
 parser.add_argument('--record', help='Record results from video or webcam and save it as "demo1.avi". Must specify --resolution argument to record.', action='store_true')
@@ -66,7 +66,6 @@ elif 'picamera' in img_source:
     picam_idx = int(img_source[8:])
 elif 'arducam' in img_source:
     source_type = 'arducam'
-    arducam_idx = int(img_source[7:])
 else:
     print(f'Input {img_source} is invalid. Please try again.')
     sys.exit(0)
@@ -109,6 +108,18 @@ elif source_type == 'picamera':
     cap.configure(cap.create_video_configuration(main={"format": 'RGB888', "size": (resW, resH)}))
     cap.start()
 elif source_type == 'arducam':
+    # Auto-detect the first available /dev/video device for Arducam
+    arducam_idx = None
+    for i in range(4):  # check /dev/video0 → /dev/video3
+        test_cap = cv2.VideoCapture(i, cv2.CAP_V4L2)
+        if test_cap.isOpened():
+            arducam_idx = i
+            test_cap.release()
+            break
+    if arducam_idx is None:
+        print('No Arducam device found.')
+        sys.exit(0)
+    print(f"Using Arducam at /dev/video{arducam_idx}")
     cap = cv2.VideoCapture(arducam_idx, cv2.CAP_V4L2)
     if user_res:
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, resW)
